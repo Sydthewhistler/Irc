@@ -64,7 +64,6 @@ public:
 	void	removeInvited(Client *client);
 
 	// --- Broadcast ---
-	// Envoie un message à tous les membres du channel SAUF l'émetteur
 	void	broadcast(const std::string &message, Client *except);
 
 private:

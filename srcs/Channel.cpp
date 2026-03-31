@@ -1,8 +1,6 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 
-// Forme canonique (partagé)
-
 Channel::Channel(const std::string &name)
 	: _name(name), _topic(""), _key(""), _userLimit(0),
 	  _inviteOnly(false), _topicRestricted(false),
@@ -40,8 +38,6 @@ Channel &Channel::operator=(const Channel &rhs)
 
 Channel::~Channel(void) {}
 
-// Getters simples (partagé)
-
 const std::string				&Channel::getName(void) const { return _name; }
 const std::string				&Channel::getTopic(void) const { return _topic; }
 const std::string				&Channel::getKey(void) const { return _key; }
@@ -62,95 +58,118 @@ void	Channel::removeKey(void) { _key = ""; _hasKey = false; }
 void	Channel::setUserLimit(size_t limit) { _userLimit = limit; _hasUserLimit = true; }
 void	Channel::removeUserLimit(void) { _userLimit = 0; _hasUserLimit = false; }
 
-/*
-** TODO: Personne B — Gestion des membres
-** addMember: ajouter si pas déjà membre
-** removeMember: retirer + retirer des opérateurs et invités aussi
-** isMember: vérifier si le client est dans _members
-** isEmpty: vérifier si _members est vide
-*/
 void	Channel::addMember(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	if (!isMember(client))
+		_members.push_back(client);
 }
 
 void	Channel::removeMember(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _members.size(); i++)
+	{
+		if (_members[i] == client)
+		{
+			_members.erase(_members.begin() + i);
+			break;
+		}
+	}
+	for (size_t i = 0; i < _operators.size(); i++)
+	{
+		if (_operators[i] == client)
+		{
+			_operators.erase(_operators.begin() + i);
+			break;
+		}
+	}
+	for (size_t i = 0; i < _invited.size(); i++)
+	{
+		if (_invited[i] == client)
+		{
+			_invited.erase(_invited.begin() + i);
+			break;
+		}
+	}
 }
 
 bool	Channel::isMember(Client *client) const
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _members.size(); i++)
+	{
+		if (_members[i] == client)
+			return true;
+	}
 	return false;
 }
 
 bool	Channel::isEmpty(void) const
 {
-	// TODO: Personne B
+	if (_members.size() > 0)
+		return false;
 	return true;
 }
 
-/*
-** TODO: Personne B — Gestion des opérateurs
-** addOperator: ajouter si pas déjà opérateur
-** removeOperator: retirer de la liste
-** isOperator: vérifier si le client est opérateur
-*/
 void	Channel::addOperator(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	if (!isOperator(client))
+		_operators.push_back(client);
 }
 
 void	Channel::removeOperator(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _operators.size(); i++)
+	{
+		if (_operators[i] == client)
+		{
+			_operators.erase(_operators.begin() + i);
+			break;
+		}
+	}
 }
 
 bool	Channel::isOperator(Client *client) const
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _operators.size(); i++)
+	{
+		if (_operators[i] == client)
+			return true;
+	}
 	return false;
 }
 
-/*
-** TODO: Personne B — Gestion des invitations
-** addInvited: ajouter si pas déjà invité
-** isInvited: vérifier si le client a été invité
-** removeInvited: retirer de la liste
-*/
 void	Channel::addInvited(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	if (!isInvited(client))
+		_invited.push_back(client);
 }
 
 bool	Channel::isInvited(Client *client) const
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _invited.size(); i++)
+	{
+		if (_invited[i] == client)
+			return true;
+	}
 	return false;
 }
 
 void	Channel::removeInvited(Client *client)
 {
-	(void)client;
-	// TODO: Personne B
+	for (size_t i = 0; i < _invited.size(); i++)
+	{
+		if (_invited[i] == client)
+		{
+			_invited.erase(_invited.begin() + i);
+			break;
+		}
+	}
 }
 
-/*
-** TODO: Personne B — Broadcast
-** Envoie un message à tous les membres du channel SAUF 'except'.
-** Utiliser client->appendSendBuffer(message + "\r\n") pour chaque membre.
-*/
 void	Channel::broadcast(const std::string &message, Client *except)
 {
-	(void)message; (void)except;
-	// TODO: Personne B
+	for (size_t i = 0; i < _members.size(); i++)
+	{
+		if (_members[i] != except)
+			_members[i]->appendSendBuffer(message + "\r\n");
+	}
 }

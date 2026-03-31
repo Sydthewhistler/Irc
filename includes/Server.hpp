@@ -86,6 +86,10 @@ private:
 	std::vector<struct pollfd>		_pollFds;
 	std::map<int, Client *>			_clients;		// fd -> Client*
 	std::map<std::string, Channel *>	_channels;	// name -> Channel*
+
+	void	_sendWelcome(Client *client);
 };
+
+bool	nick_is_valid(const std::string &nickname);
 
 #endif

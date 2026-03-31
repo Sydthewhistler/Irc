@@ -54,17 +54,16 @@ void	Client::setRealname(const std::string &realname) { _realname = realname; }
 void	Client::setHostname(const std::string &hostname) { _hostname = hostname; }
 void	Client::setPassValidated(bool validated) { _passValidated = validated; }
 
-/*
-** TODO: Personne B
-** isRegistered(): retourne true quand le client a complété
-** les 3 étapes d'enregistrement:
-**   1. PASS validé (_passValidated == true)
-**   2. NICK défini (_nickname != "" et != "*")
-**   3. USER défini (_username != "")
-*/
 bool	Client::isRegistered(void) const
 {
-	// TODO: Personne B
+	if (_passValidated == true)
+	{
+		if (_nickname != "" && (_nickname != "*"))
+		{
+			if (_username != "")
+				return (true);
+		}
+	}
 	return false;
 }
 
@@ -90,13 +89,7 @@ bool	Client::extractLine(std::string &line)
 	return false;
 }
 
-/*
-** TODO: Personne B
-** getPrefix(): retourne le préfixe IRC du client au format "nick!user@host"
-** Utilisé quand le serveur relaie un message d'un client vers d'autres.
-*/
 std::string	Client::getPrefix(void) const
 {
-	// TODO: Personne B
-	return "";
+	return (_nickname + "!" + _username + "@" + _hostname);
 }

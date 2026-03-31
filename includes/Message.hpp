@@ -3,6 +3,7 @@
 
 # include <string>
 # include <vector>
+# include <sstream>
 
 /*
 ** Structure représentant un message IRC parsé.

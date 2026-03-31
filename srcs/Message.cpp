@@ -32,25 +32,44 @@ Message::~Message(void) {}
 **   1. Si la ligne commence par ':', extraire le prefix (jusqu'au premier espace)
 **   2. Extraire la commande (premier mot après le prefix)
 **   3. Extraire les paramètres:
-**      - Chaque mot séparé par un espace = un paramètre
-**      - Si un paramètre commence par ':', tout le reste est UN seul paramètre (trailing)
+**	  - Chaque mot séparé par un espace = un paramètre
+**	  - Si un paramètre commence par ':', tout le reste est UN seul paramètre (trailing)
 **   4. Mettre la commande en majuscules (NICK, nick, Nick -> NICK)
 */
-Message	Message::parse(const std::string &raw)
+Message Message::parse(const std::string &raw)
 {
 	Message msg;
-	if(raw.empty())
+	if (raw.empty())
 		return msg;
-	if(raw[0] == ':')
+
+	std::istringstream iss(raw);
+	std::string token;
+
+	if (raw[0] == ':') //Prefix
 	{
-		
+		iss >> msg.prefix;
+		msg.prefix = msg.prefix.substr(1);
 	}
-	else
-		msg.command = raw;
-	
 
+	//Command
+	iss >> msg.command;
+	for (size_t i = 0; i < msg.command.size(); i++)
+		msg.command[i] = std::toupper(msg.command[i]);
 
-
+	//Params
+	while (iss >> token)
+	{
+		if (token[0] == ':')
+		{
+			std::string trailing = token.substr(1);
+			std::string rest;
+			if (std::getline(iss, rest))
+				trailing += rest;
+			msg.params.push_back(trailing);
+			break;
+		}
+		msg.params.push_back(token);
+	}
 
 	return msg;
 }

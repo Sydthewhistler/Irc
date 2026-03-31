@@ -31,7 +31,23 @@ Server::Server(int port, const std::string &password)
 */
 Server::~Server(void)
 {
-	// TODO: Personne A
+	
+	for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) // ferme/supprime tous les client
+	{
+		close(it->first);
+		delete it->second;
+	}
+	_clients.clear();
+
+	for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) //supprime tous les channels
+		delete it->second;
+	_channels.clear();
+
+	// 3. Fermer le serverFd
+	if (_serverFd >= 0)
+		close(_serverFd);
+
+	std::cout << "[LOG] Serveur arrêté proprement" << std::endl;
 }
 
 // ========================================
@@ -198,10 +214,10 @@ void	Server::run(void)
 		for(size_t i = 0; i < _pollFds.size(); ++i)
 		{
 			if(_pollFds[i].fd == _serverFd && _pollFds[i].revents & POLLIN) //nouvelle connexion
-					_acceptClient();
+				_acceptClient();
 			else if (_pollFds[i].revents & POLLIN) // données à recevoir
 			{
-		_receiveData(_pollFds[i].fd);
+				_receiveData(_pollFds[i].fd);
 			}
 			else if (_pollFds[i].revents & POLLOUT) // prêt à envoyer des données
 			{
@@ -245,7 +261,7 @@ void	Server::_acceptClient(void)
 
 	struct pollfd pfd;
 	pfd.fd = clientFd;
-	pfd.events = POLLIN | POLLOUT; // surveille les données à recevoir et la possibilité d'envoyer
+	pfd.events = POLLIN | POLLOUT; // surveille données à recevoir et possibilité d'envoyer
 	pfd.revents = 0;
 	_pollFds.push_back(pfd);
 
@@ -324,10 +340,33 @@ void Server::_sendData(int fd)
 **   3. Retirer de _pollFds
 **   4. delete _clients[fd] et retirer de _clients
 */
-void	Server::_disconnectClient(int fd)
+void Server::_disconnectClient(int fd)
 {
-	(void)fd;
-	// TODO: Personne A
+	if (_clients.find(fd) == _clients.end())
+		return;
+
+	Client *client = _clients[fd];
+
+	
+	for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) // Retirer client tous les channels
+	{
+		it->second->removeMember(client);
+	}
+
+	close(fd);
+
+	for (size_t i = 0; i < _pollFds.size(); i++)
+	{
+		if (_pollFds[i].fd == fd)
+		{
+			_pollFds.erase(_pollFds.begin() + i);
+			break;
+		}
+	}
+
+	std::cout << "[LOG] Client déconnecté fd=" << fd << std::endl;
+	delete client;
+	_clients.erase(fd);
 }
 
 /*
@@ -340,8 +379,15 @@ void	Server::_disconnectClient(int fd)
 */
 void	Server::_processLines(Client *client)
 {
-	(void)client;
-	// TODO: Personne A
+	std::string line;
+	while (client->extractLine(line))
+	{
+		if (line.empty())
+			continue;
+		Message msg = Message::parse(line);
+		if (!msg.command.empty())
+			_executeCommand(client, msg);
+	}
 }
 
 // ========================================

@@ -39,8 +39,19 @@ Message::~Message(void) {}
 Message	Message::parse(const std::string &raw)
 {
 	Message msg;
-	(void)raw;
-	// TODO: Personne A
+	if(raw.empty())
+		return msg;
+	if(raw[0] == ':')
+	{
+		
+	}
+	else
+		msg.command = raw;
+	
+
+
+
+
 	return msg;
 }
 

@@ -353,20 +353,19 @@ void Server::_disconnectClient(int fd)
 		return;
 
 	Client *client = _clients[fd];
-
-	
-	for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) // Retirer client tous les channels
+	std::map<std::string, Channel*>::iterator it = _channels.begin();
+	while (it != _channels.end())
 	{
 		it->second->removeMember(client);
 		if (it->second->isEmpty())
 		{
 			delete it->second;
-			_channels.erase(it);
+			_channels.erase(it++);
 		}
+		else
+			++it;
 	}
-
 	close(fd);
-
 	for (size_t i = 0; i < _pollFds.size(); i++)
 	{
 		if (_pollFds[i].fd == fd)
@@ -375,7 +374,6 @@ void Server::_disconnectClient(int fd)
 			break;
 		}
 	}
-
 	std::cout << "[LOG] Client déconnecté fd=" << fd << std::endl;
 	delete client;
 	_clients.erase(fd);

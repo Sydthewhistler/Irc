@@ -84,8 +84,20 @@ void	Client::clearSendBuffer(void) { _sendBuffer.clear(); }
 */
 bool	Client::extractLine(std::string &line)
 {
-	(void)line;
-	// TODO: Personne A
+	size_t pos = _recvBuffer.find("\r\n");
+	if (pos != std::string::npos)
+	{
+		line = _recvBuffer.substr(0, pos);
+		_recvBuffer.erase(0, pos + 2);
+		return true;
+	}
+	pos = _recvBuffer.find('\n'); // compatibilité avec clients qui n'envoient que \n (WeeChat)
+	if (pos != std::string::npos)
+	{
+		line = _recvBuffer.substr(0, pos);
+		_recvBuffer.erase(0, pos + 1);
+		return true;
+	}
 	return false;
 }
 

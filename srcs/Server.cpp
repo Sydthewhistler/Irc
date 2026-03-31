@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <signal.h>
+#include <csignal>
 
 const std::string Server::SERVER_NAME = "ft_irc";
 
@@ -21,6 +21,7 @@ Server::Server(int port, const std::string &password)
 	: _port(port), _password(password), _serverFd(-1)
 {
 	_initSocket();
+	_initSignals();
 }
 
 /*
@@ -156,12 +157,26 @@ void	Server::_initSocket(void)
 	pfd.revents = 0;
 	_pollFds.push_back(pfd);
 
+	Server::running = true;
+}
+
+void	Server::_handleSigint(int sig)
+{
+	(void)sig;
+	std::cout << "Server shutting down..." << std::endl;
+	Server::running = false;
+	std::exit(0);
+}
+
+void	Server::_initSignals()
+{
+	std::signal(SIGINT, Server::_handleSigint);
+	std::signal(SIGPIPE, SIG_IGN);
 }
 
 /*
 ** TODO: Personne A
 ** run: boucle principale
-**   1. Installer signal handlers (SIGINT -> arrêt propre, SIGPIPE -> SIG_IGN)
 **   2. while (running):
 **	  a. poll(_pollFds, timeout)
 **	  b. Parcourir les fds:
@@ -172,9 +187,34 @@ void	Server::_initSocket(void)
 */
 void	Server::run(void)
 {
-	
+	while(Server::running)
+	{
+		int ret = poll(_pollFds.data(), _pollFds.size(), -1);
+		if (ret < 0)
+		{
+			std::cerr << "Error in poll: " << strerror(errno) << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		for(size_t i = 0; i < _pollFds.size(); ++i)
+		{
+			if(_pollFds[i].fd == _serverFd && _pollFds[i].revents & POLLIN) //nouvelle connexion
+					_acceptClient();
+			else if (_pollFds[i].revents & POLLIN) // données à recevoir
+			{
+		_receiveData(_pollFds[i].fd);
+			}
+			else if (_pollFds[i].revents & POLLOUT) // prêt à envoyer des données
+			{
+				_sendData(_pollFds[i].fd);
+			}
+			else if (_pollFds[i].revents & (POLLERR | POLLHUP)) // erreur ou déconnexion
+			{
+				_disconnectClient(_pollFds[i].fd);
+				i--;
+			}
+		}
+	}
 }
-
 /*
 ** TODO: Personne A
 ** _acceptClient:
@@ -186,7 +226,30 @@ void	Server::run(void)
 */
 void	Server::_acceptClient(void)
 {
-	// TODO: Personne A
+	struct sockaddr_in clientAddr;
+	socklen_t clientLen = sizeof(clientAddr);
+
+	int clientFd = accept(_serverFd, (struct sockaddr*)&clientAddr, &clientLen);
+	if(clientFd < 0)
+	{
+		std::cerr << "Error accepting client: " << strerror(errno) << std::endl;
+		return;
+	}
+	fcntl(clientFd, F_SETFL, O_NONBLOCK);
+
+	char hostname[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &clientAddr.sin_addr, hostname, sizeof(hostname));
+
+	Client *newClient = new Client(clientFd);
+	_clients[clientFd] = newClient;
+
+	struct pollfd pfd;
+	pfd.fd = clientFd;
+	pfd.events = POLLIN | POLLOUT; // surveille les données à recevoir et la possibilité d'envoyer
+	pfd.revents = 0;
+	_pollFds.push_back(pfd);
+
+	std::cout << "[LOG] New client connected: " << hostname << " (fd=" << clientFd << ")" << std::endl;
 }
 
 /*
@@ -198,8 +261,22 @@ void	Server::_acceptClient(void)
 */
 void	Server::_receiveData(int fd)
 {
-	(void)fd;
-	// TODO: Personne A
+	char buf[4096];
+	memset(buf, 0, sizeof(buf));
+
+	int bytesRead = recv(fd, buf, sizeof(buf) - 1, 0);
+	if (bytesRead <= 0)
+	{
+		if(bytesRead == 0)	// Client déconnecté proprement
+			std::cout << "[LOG] Client fd=" << fd << " properly disconnected" << std::endl;
+		else // Erreur de recv
+			std::cerr << "[LOG] Erreur recv() fd=" << fd << ": " << strerror(errno) << std::endl;
+		_disconnectClient(fd);
+		return;
+	}
+	Client *client = _clients[fd];
+	client->appendRecvBuffer(std::string(buf, bytesRead));
+	_processLines(client);
 }
 
 /*
@@ -210,10 +287,33 @@ void	Server::_receiveData(int fd)
 **   3. Si send < buffer.size() -> garder le reste dans le buffer
 **   4. Si tout envoyé -> clearSendBuffer()
 */
-void	Server::_sendData(int fd)
+void Server::_sendData(int fd)
 {
-	(void)fd;
-	// TODO: Personne A
+	if (_clients.find(fd) == _clients.end())
+		return;
+
+	Client *client = _clients[fd];
+	const std::string &buf = client->getSendBuffer();
+
+	if (buf.empty())
+		return;
+
+	int bytes = send(fd, buf.c_str(), buf.size(), 0);
+	if (bytes < 0)
+	{
+		std::cerr << "[LOG] Erreur send() fd=" << fd
+		  << ": " << strerror(errno) << std::endl;
+		_disconnectClient(fd);
+		return;
+	}
+	else if (bytes < static_cast<int>(buf.size()))
+	{
+		std::string reste = buf.substr(bytes);
+		client->clearSendBuffer();
+		client->appendSendBuffer(reste);
+	}
+	else
+		client->clearSendBuffer();
 }
 
 /*

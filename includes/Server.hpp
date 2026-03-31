@@ -46,10 +46,17 @@ public:
 	// Nom du serveur (pour les préfixes de réponse)
 	static const std::string	SERVER_NAME;
 
+	//signaux
+	static bool running; // Flag pour contrôler la boucle principale
+
 private:
 	Server(void);
 	Server(const Server &src);
 	Server &operator=(const Server &rhs);
+
+	// --- Signaux ---
+	static void _initSignals();
+	static void	_handleSigint(int sig);
 
 	// --- Réseau (Personne A) ---
 	void	_initSocket(void);

@@ -1,0 +1,1 @@
+client -> PRIVMSG <destinataire> :<message>\r\n -> server -> (personne A) parse -> ajoute -> :[user] [user]@[IP] .... -> struct message -> personne B interprete

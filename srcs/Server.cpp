@@ -121,7 +121,41 @@ void	Server::removeChannel(const std::string &name)
 */
 void	Server::_initSocket(void)
 {
-	// TODO: Personne A
+	_serverFd = socket(AF_INET, SOCK_STREAM, 0);
+	if (_serverFd < 0)
+	{
+		std::cerr << "Error creating socket: " << strerror(errno) << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	int opt = 1;
+	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+	{
+		std::cerr << "Error setting SO_REUSEADDR: " << strerror(errno) << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(_port);
+	addr.sin_addr.s_addr = INADDR_ANY;
+	if (bind(_serverFd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+	{
+		std::cerr << "Error binding socket: " << strerror(errno) << std::endl;
+		exit(EXIT_FAILURE);
+	}
+
+	if (listen(_serverFd, SOMAXCONN) < 0)
+	{
+		std::cerr << "Error listening: " << strerror(errno) << std::endl;
+		exit(EXIT_FAILURE);
+	}
+	fcntl(_serverFd, F_SETFL, O_NONBLOCK);
+
+	struct pollfd pfd;
+	pfd.fd = _serverFd;
+	pfd.events = POLLIN;  // surveille les nouvelles connexions
+	pfd.revents = 0;
+	_pollFds.push_back(pfd);
+
 }
 
 /*
@@ -129,16 +163,16 @@ void	Server::_initSocket(void)
 ** run: boucle principale
 **   1. Installer signal handlers (SIGINT -> arrêt propre, SIGPIPE -> SIG_IGN)
 **   2. while (running):
-**      a. poll(_pollFds, timeout)
-**      b. Parcourir les fds:
-**         - _serverFd + POLLIN  -> _acceptClient()
-**         - client fd + POLLIN  -> _receiveData(fd)
-**         - client fd + POLLOUT + sendBuffer non vide -> _sendData(fd)
-**         - POLLERR / POLLHUP   -> _disconnectClient(fd)
+**	  a. poll(_pollFds, timeout)
+**	  b. Parcourir les fds:
+**	 - _serverFd + POLLIN  -> _acceptClient()
+**	 - client fd + POLLIN  -> _receiveData(fd)
+**	 - client fd + POLLOUT + sendBuffer non vide -> _sendData(fd)
+**	 - POLLERR / POLLHUP   -> _disconnectClient(fd)
 */
 void	Server::run(void)
 {
-	// TODO: Personne A
+	
 }
 
 /*
@@ -200,9 +234,9 @@ void	Server::_disconnectClient(int fd)
 ** TODO: Personne A
 ** _processLines:
 **   Tant que client->extractLine(line) retourne true:
-**     - Si line est vide, continuer
-**     - Message msg = Message::parse(line)
-**     - Si msg.command non vide -> _executeCommand(client, msg)
+**	 - Si line est vide, continuer
+**	 - Message msg = Message::parse(line)
+**	 - Si msg.command non vide -> _executeCommand(client, msg)
 */
 void	Server::_processLines(Client *client)
 {
@@ -320,11 +354,11 @@ void	Server::_handlePart(Client *client, const Message &msg)
 ** TODO: Personne B — PRIVMSG
 ** - Vérifier params: au moins 2 (cible + message)
 ** - Si cible commence par '#' -> message vers un channel
-**     - Vérifier que le channel existe et que le client en est membre
-**     - Broadcast le message aux autres membres
+**	 - Vérifier que le channel existe et que le client en est membre
+**	 - Broadcast le message aux autres membres
 ** - Sinon -> message privé vers un utilisateur
-**     - Vérifier que le nick existe avec getClientByNick()
-**     - Envoyer le message directement
+**	 - Vérifier que le nick existe avec getClientByNick()
+**	 - Envoyer le message directement
 */
 void	Server::_handlePrivmsg(Client *client, const Message &msg)
 {
@@ -371,7 +405,7 @@ void	Server::_handleInvite(Client *client, const Message &msg)
 ** TODO: Personne B — TOPIC
 ** - Si pas de params[1]: afficher le topic actuel (332 ou 331)
 ** - Si params[1] présent: changer le topic
-**     - Si channel +t, vérifier que le client est opérateur
+**	 - Si channel +t, vérifier que le client est opérateur
 ** - Broadcast le changement de topic aux membres
 */
 void	Server::_handleTopic(Client *client, const Message &msg)
@@ -383,11 +417,11 @@ void	Server::_handleTopic(Client *client, const Message &msg)
 ** TODO: Personne B — MODE
 ** - Parser le mode string (ex: "+ik password", "-l", "+o nick")
 ** - Pour chaque flag:
-**     i: setInviteOnly
-**     t: setTopicRestricted
-**     k: setKey / removeKey
-**     o: addOperator / removeOperator
-**     l: setUserLimit / removeUserLimit
+**	 i: setInviteOnly
+**	 t: setTopicRestricted
+**	 k: setKey / removeKey
+**	 o: addOperator / removeOperator
+**	 l: setUserLimit / removeUserLimit
 ** - Vérifier que le client est opérateur du channel
 ** - Broadcast les changements de mode aux membres
 ** - Si pas de mode string: afficher les modes actuels (RPL_CHANNELMODEIS)

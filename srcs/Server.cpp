@@ -351,6 +351,11 @@ void Server::_disconnectClient(int fd)
 	for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) // Retirer client tous les channels
 	{
 		it->second->removeMember(client);
+		if (it->second->isEmpty())
+		{
+			delete it->second;
+			_channels.erase(it);
+		}
 	}
 
 	close(fd);

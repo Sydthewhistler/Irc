@@ -83,6 +83,17 @@ Message Message::parse(const std::string &raw)
 */
 std::string	Message::toString(void) const
 {
-	// TODO: Personne A
-	return "";
+	std::string result;
+	if (!prefix.empty())
+		result += ":" + prefix + " ";
+	result += command;
+	for(size_t i = 0; i < params.size(); i++)
+	{
+		if (params[i].find(' ') != std::string::npos || params[i][0] == ':')
+			result += " :" + params[i];
+		else
+			result += " " + params[i];
+	}
+
+	return result;
 }

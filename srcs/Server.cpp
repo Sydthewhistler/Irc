@@ -2,6 +2,7 @@
 #include "Server.hpp"
 #include <arpa/inet.h>
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -10,9 +11,6 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <csignal>
 
 const std::string Server::SERVER_NAME = "ft_irc";
 
@@ -34,22 +32,22 @@ Server::Server(int port, const std::string &password) : _port(port),
 */
 Server::~Server(void)
 {
-	
-	for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) // ferme/supprime tous les client
+	for (std::map<int,
+		Client *>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+	// ferme/supprime tous les client
 	{
 		close(it->first);
 		delete it->second;
 	}
 	_clients.clear();
-
-	for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) //supprime tous les channels
+	for (std::map<std::string,
+		Channel *>::iterator it = _channels.begin(); it != _channels.end(); ++it)
+		// supprime tous les channels
 		delete it->second;
 	_channels.clear();
-
 	// 3. Fermer le serverFd
 	if (_serverFd >= 0)
 		close(_serverFd);
-
 	std::cout << "[LOG] Serveur arrêté proprement" << std::endl;
 }
 
@@ -58,75 +56,57 @@ Server::~Server(void)
 // (Implémentées ensemble, utilisées par les deux)
 // ========================================
 
-/*
-** TODO: Partagé
-** sendToClient: ajoute message + "\r\n" dans le sendBuffer du client.
-** La boucle poll() de Personne A se chargera d'envoyer.
-*/
 void Server::sendToClient(Client *client, const std::string &message)
 {
-	(void)client;
-	(void)message;
-	// TODO
+	client->appendSendBuffer(message + "\r\n");
 }
 
-/*
-** TODO: Partagé
-** sendReply: formate ":ft_irc <code> <nickname> <params>"
-** et appelle sendToClient.
-*/
 void Server::sendReply(Client *client, const std::string &code,
 	const std::string &params)
 {
-	(void)client;
-	(void)code;
-	(void)params;
-	// TODO
+	sendToClient(client, ":ft_irc " + code + " " + client->getNickname() + " "
+		+ params);
 }
 
-/*
-** TODO: Partagé
-** getClientByNick: parcourt _clients, retourne le Client*
-** dont le nickname correspond. NULL si pas trouvé.
-*/
 Client *Server::getClientByNick(const std::string &nickname)
 {
-	(void)nickname;
-	// TODO
+	for (std::map<int,
+		Client *>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+	{
+		if (it->second->getNickname() == nickname)
+			return (it->second);
+	}
 	return (NULL);
 }
 
-/*
-** TODO: Partagé
-** getChannel: cherche dans _channels par nom. NULL si pas trouvé.
-*/
 Channel *Server::getChannel(const std::string &name)
 {
-	(void)name;
-	// TODO
+	for (std::map<std::string,
+		Channel *>::iterator it = _channels.begin(); it != _channels.end(); it++)
+	{
+		if (it->second->getName() == name)
+			return (it->second);
+	}
 	return (NULL);
 }
 
-/*
-** TODO: Partagé
-** createChannel: new Channel(name), l'ajouter à _channels,
-	retourner le pointeur.
-*/
 Channel *Server::createChannel(const std::string &name)
 {
-	(void)name;
-	// TODO
-	return (NULL);
+	Channel	*ptr;
+
+	ptr = new Channel(name);
+	_channels[name] = ptr;
+	return (ptr);
 }
 
-/*
-** TODO: Partagé
-** removeChannel: delete le channel et le retirer de _channels.
-*/
 void Server::removeChannel(const std::string &name)
 {
-	(void)name;
-	// TODO
+	std::map<std::string, Channel *>::iterator it = _channels.find(name);
+	if (it != _channels.end())
+	{
+		delete (it->second);
+		_channels.erase(it);
+	}
 }
 
 // ========================================
@@ -179,11 +159,10 @@ void Server::_initSocket(void)
 	pfd.events = POLLIN; // surveille les nouvelles connexions
 	pfd.revents = 0;
 	_pollFds.push_back(pfd);
-
 	Server::running = true;
 }
 
-void	Server::_handleSigint(int sig)
+void Server::_handleSigint(int sig)
 {
 	(void)sig;
 	std::cout << "Server shutting down..." << std::endl;
@@ -191,7 +170,7 @@ void	Server::_handleSigint(int sig)
 	std::exit(0);
 }
 
-void	Server::_initSignals()
+void Server::_initSignals()
 {
 	std::signal(SIGINT, Server::_handleSigint);
 	std::signal(SIGPIPE, SIG_IGN);
@@ -210,27 +189,32 @@ void	Server::_initSignals()
 */
 void Server::run(void)
 {
-	while(Server::running)
+	int	ret;
+
+	while (Server::running)
 	{
-		int ret = poll(_pollFds.data(), _pollFds.size(), -1);
+		ret = poll(_pollFds.data(), _pollFds.size(), -1);
 		if (ret < 0)
 		{
 			std::cerr << "Error in poll: " << strerror(errno) << std::endl;
 			exit(EXIT_FAILURE);
 		}
-		for(size_t i = 0; i < _pollFds.size(); ++i)
+		for (size_t i = 0; i < _pollFds.size(); ++i)
 		{
-			if(_pollFds[i].fd == _serverFd && _pollFds[i].revents & POLLIN) //nouvelle connexion
+			if (_pollFds[i].fd == _serverFd && _pollFds[i].revents & POLLIN)
+				// nouvelle connexion
 				_acceptClient();
 			else if (_pollFds[i].revents & POLLIN) // données à recevoir
 			{
 				_receiveData(_pollFds[i].fd);
 			}
-			else if (_pollFds[i].revents & POLLOUT) // prêt à envoyer des données
+			else if (_pollFds[i].revents & POLLOUT)
+			// prêt à envoyer des données
 			{
 				_sendData(_pollFds[i].fd);
 			}
-			else if (_pollFds[i].revents & (POLLERR | POLLHUP)) // erreur ou déconnexion
+			else if (_pollFds[i].revents & (POLLERR | POLLHUP))
+			// erreur ou déconnexion
 			{
 				_disconnectClient(_pollFds[i].fd);
 				i--;
@@ -249,29 +233,29 @@ void Server::run(void)
 */
 void Server::_acceptClient(void)
 {
-	struct sockaddr_in clientAddr;
-	socklen_t clientLen = sizeof(clientAddr);
+	struct sockaddr_in	clientAddr;
+	socklen_t			clientLen;
+	int					clientFd;
+	char				hostname[INET_ADDRSTRLEN];
+	Client				*newClient;
+	struct pollfd		pfd;
 
-	int clientFd = accept(_serverFd, (struct sockaddr*)&clientAddr, &clientLen);
-	if(clientFd < 0)
+	clientLen = sizeof(clientAddr);
+	clientFd = accept(_serverFd, (struct sockaddr *)&clientAddr, &clientLen);
+	if (clientFd < 0)
 	{
 		std::cerr << "Error accepting client: " << strerror(errno) << std::endl;
-		return;
+		return ;
 	}
 	fcntl(clientFd, F_SETFL, O_NONBLOCK);
-
-	char hostname[INET_ADDRSTRLEN];
 	inet_ntop(AF_INET, &clientAddr.sin_addr, hostname, sizeof(hostname));
-
-	Client *newClient = new Client(clientFd);
+	newClient = new Client(clientFd);
 	_clients[clientFd] = newClient;
-
-	struct pollfd pfd;
 	pfd.fd = clientFd;
-	pfd.events = POLLIN | POLLOUT; // surveille données à recevoir et possibilité d'envoyer
+	pfd.events = POLLIN | POLLOUT;
+	// surveille données à recevoir et possibilité d'envoyer
 	pfd.revents = 0;
 	_pollFds.push_back(pfd);
-
 	std::cout << "[LOG] New client connected: " << hostname << " (fd=" << clientFd << ")" << std::endl;
 }
 
@@ -284,20 +268,22 @@ void Server::_acceptClient(void)
 */
 void Server::_receiveData(int fd)
 {
-	char buf[4096];
-	memset(buf, 0, sizeof(buf));
+	char	buf[4096];
+	int		bytesRead;
+	Client	*client;
 
-	int bytesRead = recv(fd, buf, sizeof(buf) - 1, 0);
+	memset(buf, 0, sizeof(buf));
+	bytesRead = recv(fd, buf, sizeof(buf) - 1, 0);
 	if (bytesRead <= 0)
 	{
-		if(bytesRead == 0)	// Client déconnecté proprement
+		if (bytesRead == 0) // Client déconnecté proprement
 			std::cout << "[LOG] Client fd=" << fd << " properly disconnected" << std::endl;
 		else // Erreur de recv
 			std::cerr << "[LOG] Erreur recv() fd=" << fd << ": " << strerror(errno) << std::endl;
 		_disconnectClient(fd);
-		return;
+		return ;
 	}
-	Client *client = _clients[fd];
+	client = _clients[fd];
 	client->appendRecvBuffer(std::string(buf, bytesRead));
 	_processLines(client);
 }
@@ -312,22 +298,21 @@ void Server::_receiveData(int fd)
 */
 void Server::_sendData(int fd)
 {
+	Client	*client;
+	int		bytes;
+
 	if (_clients.find(fd) == _clients.end())
-		return;
-
-	Client *client = _clients[fd];
+		return ;
+	client = _clients[fd];
 	const std::string &buf = client->getSendBuffer();
-
 	if (buf.empty())
-		return;
-
-	int bytes = send(fd, buf.c_str(), buf.size(), 0);
+		return ;
+	bytes = send(fd, buf.c_str(), buf.size(), 0);
 	if (bytes < 0)
 	{
-		std::cerr << "[LOG] Erreur send() fd=" << fd
-		  << ": " << strerror(errno) << std::endl;
+		std::cerr << "[LOG] Erreur send() fd=" << fd << ": " << strerror(errno) << std::endl;
 		_disconnectClient(fd);
-		return;
+		return ;
 	}
 	else if (bytes < static_cast<int>(buf.size()))
 	{
@@ -349,11 +334,13 @@ void Server::_sendData(int fd)
 */
 void Server::_disconnectClient(int fd)
 {
-	if (_clients.find(fd) == _clients.end())
-		return;
+	Client	*client;
+	delete	client;
 
-	Client *client = _clients[fd];
-	std::map<std::string, Channel*>::iterator it = _channels.begin();
+	if (_clients.find(fd) == _clients.end())
+		return ;
+	client = _clients[fd];
+	std::map<std::string, Channel *>::iterator it = _channels.begin();
 	while (it != _channels.end())
 	{
 		it->second->removeMember(client);
@@ -371,11 +358,10 @@ void Server::_disconnectClient(int fd)
 		if (_pollFds[i].fd == fd)
 		{
 			_pollFds.erase(_pollFds.begin() + i);
-			break;
+			break ;
 		}
 	}
 	std::cout << "[LOG] Client déconnecté fd=" << fd << std::endl;
-	delete client;
 	_clients.erase(fd);
 }
 
@@ -389,12 +375,14 @@ void Server::_disconnectClient(int fd)
 */
 void Server::_processLines(Client *client)
 {
+	Message	msg;
+
 	std::string line;
 	while (client->extractLine(line))
 	{
 		if (line.empty())
-			continue;
-		Message msg = Message::parse(line);
+			continue ;
+		msg = Message::parse(line);
 		if (!msg.command.empty())
 			_executeCommand(client, msg);
 	}
@@ -404,25 +392,46 @@ void Server::_processLines(Client *client)
 // Dispatch — Partagé
 // ========================================
 
-/*
-** TODO: Partagé
-** _executeCommand: router la commande vers le bon handler.
-**
-** Avant enregistrement (accessibles toujours):
-**   PASS, NICK, USER, QUIT, CAP (ignorer), PING, PONG
-**
-** Après enregistrement (vérifier client->isRegistered()):
-**   JOIN, PART, PRIVMSG, NOTICE, KICK, INVITE, TOPIC, MODE, WHO
-**
-** Commande inconnue -> sendReply(ERR_UNKNOWNCOMMAND)
-** Client pas registered pour une commande post-registration
-	-> sendReply(ERR_NOTREGISTERED)
-*/
 void Server::_executeCommand(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
-	// TODO: Partagé
+	if (msg.command == "CAP")
+		return ;
+	if (msg.command == "PASS")
+		return (_handlePass(client, msg));
+	if (msg.command == "NICK")
+		return (_handleNick(client, msg));
+	if (msg.command == "USER")
+		return (_handleUser(client, msg));
+	if (msg.command == "QUIT")
+		return (_handleQuit(client, msg));
+	if (msg.command == "PING")
+		return (_handlePing(client, msg));
+	if (msg.command == "PONG")
+		return (_handlePong(client, msg));
+	if (!client->isRegistered())
+	{
+		sendReply(client, ERR_NOTREGISTERED, ":You have not registered");
+		return ;
+	}
+	if (msg.command == "JOIN")
+		return (_handleJoin(client, msg));
+	if (msg.command == "PART")
+		return (_handlePart(client, msg));
+	if (msg.command == "PRIVMSG")
+		return (_handlePrivmsg(client, msg));
+	if (msg.command == "NOTICE")
+		return (_handleNotice(client, msg));
+	if (msg.command == "KICK")
+		return (_handleKick(client, msg));
+	if (msg.command == "INVITE")
+		return (_handleInvite(client, msg));
+	if (msg.command == "TOPIC")
+		return (_handleTopic(client, msg));
+	if (msg.command == "MODE")
+		return (_handleMode(client, msg));
+	if (msg.command == "WHO")
+		return (_handleWho(client, msg));
+	sendReply(client, ERR_UNKNOWNCOMMAND, msg.command + ":Unknown command");
 }
 
 // ========================================
@@ -438,7 +447,8 @@ void Server::_handlePass(Client *client, const Message &msg)
 	}
 	if (client->isRegistered())
 	{
-		sendReply(client, ERR_ALREADYREGISTERED, "PASS :You may not reregister");
+		sendReply(client, ERR_ALREADYREGISTERED,
+			"PASS :You may not reregister");
 		return ;
 	}
 	if (_password != msg.params[0])
@@ -467,7 +477,8 @@ bool	nick_is_valid(const std::string &nickname)
 
 void Server::_sendWelcome(Client *client)
 {
-	sendReply(client, RPL_WELCOME, "Welcome to the IRC Network " + client->getPrefix());
+	sendReply(client, RPL_WELCOME, "Welcome to the IRC Network "
+		+ client->getPrefix());
 	sendReply(client, RPL_YOURHOST, "Your host is ft_irc, running version 1.0");
 	sendReply(client, RPL_CREATED, "This server was created <date>");
 	sendReply(client, RPL_MYINFO, "ft_irc 1.0 o itkol");
@@ -476,6 +487,7 @@ void Server::_sendWelcome(Client *client)
 void Server::_handleNick(Client *client, const Message &msg)
 {
 	Channel	*channel;
+	bool	wasRegistered;
 
 	if (msg.params.empty())
 	{
@@ -484,7 +496,8 @@ void Server::_handleNick(Client *client, const Message &msg)
 	}
 	if (!nick_is_valid(msg.params[0]))
 	{
-		sendReply(client, ERR_ERRONEUSNICKNAME, msg.params[0] + ":Erroneous nickname");
+		sendReply(client, ERR_ERRONEUSNICKNAME, msg.params[0]
+			+ ":Erroneous nickname");
 		return ;
 	}
 	if (getClientByNick(msg.params[0])
@@ -496,15 +509,18 @@ void Server::_handleNick(Client *client, const Message &msg)
 	}
 	if (client->isRegistered())
 	{
-		for (std::map<std::string, Channel *>::iterator it = _channels.begin(); it != _channels.end(); ++it)
+		for (std::map<std::string,
+			Channel *>::iterator it = _channels.begin(); it != _channels.end(); ++it)
 		{
 			channel = it->second;
 			if (channel->isMember(client))
-				channel->broadcast(":" + client->getNickname() + " NICK " + msg.params[0], client);
+				channel->broadcast(":" + client->getNickname() + " NICK "
+					+ msg.params[0], client);
 		}
-		sendToClient(client, ":" + client->getNickname() + " NICK " + msg.params[0]);
+		sendToClient(client, ":" + client->getNickname() + " NICK "
+			+ msg.params[0]);
 	}
-	bool wasRegistered = client->isRegistered();
+	wasRegistered = client->isRegistered();
 	client->setNickname(msg.params[0]);
 	if (!wasRegistered && client->isRegistered())
 		_sendWelcome(client);
@@ -512,6 +528,8 @@ void Server::_handleNick(Client *client, const Message &msg)
 
 void Server::_handleUser(Client *client, const Message &msg)
 {
+	bool	wasRegistered;
+
 	if (msg.params.size() != 4)
 	{
 		sendReply(client, ERR_NEEDMOREPARAMS, "USER :Not enough parameters");
@@ -519,24 +537,30 @@ void Server::_handleUser(Client *client, const Message &msg)
 	}
 	if (client->isRegistered())
 	{
-		sendReply(client, ERR_ALREADYREGISTERED, "USER :You may not reregister");
+		sendReply(client, ERR_ALREADYREGISTERED,
+			"USER :You may not reregister");
 		return ;
 	}
-	bool wasRegistered = client->isRegistered();
+	wasRegistered = client->isRegistered();
 	client->setUsername(msg.params[0]);
 	client->setRealname(msg.params[3]);
 	if (!wasRegistered && client->isRegistered())
 		_sendWelcome(client);
 }
 
-/*
-** TODO: Personne B — QUIT
-** - Récupérer le message de quit (params[0] ou "Quit")
-** - Informer tous les channels où le client est présent
-** - Marquer le client pour déconnexion
-*/
 void Server::_handleQuit(Client *client, const Message &msg)
 {
+	std::string reason = msg.params.empty() ? "Quit" : msg.params[0];
+	for (std::map<std::string,
+		Channel *>::iterator it = _channels.begin(); it != _channels.end(); it++)
+	{
+		if (it->second->isMember(client))
+		{
+			it->second->broadcast(":" + client->getPrefix() + " QUIT :"
+				+ reason, client);
+		}
+	}
+	_disconnectClient(client->getFd());
 }
 
 /*
@@ -551,8 +575,6 @@ void Server::_handleQuit(Client *client, const Message &msg)
 */
 void Server::_handleJoin(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
 }
 
 /*
@@ -569,30 +591,81 @@ void Server::_handlePart(Client *client, const Message &msg)
 	(void)msg;
 }
 
-/*
-** TODO: Personne B — PRIVMSG
-** - Vérifier params: au moins 2 (cible + message)
-** - Si cible commence par '#' -> message vers un channel
-**		- Vérifier que le channel existe et que le client en est membre
-**		- Broadcast le message aux autres membres
-** - Sinon -> message privé vers un utilisateur
-**		- Vérifier que le nick existe avec getClientByNick()
-**		- Envoyer le message directement
-*/
 void Server::_handlePrivmsg(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Client	*targetClient;
+
+	if (msg.params.size() < 2)
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	const std::string &target = msg.params[0];
+	const std::string &text = msg.params[1];
+	if (!target.empty() && target[0] == '#')
+	{
+		std::map<std::string, Channel *>::iterator it = _channels.find(target);
+		if (it != _channels.end())
+		{
+			if (it->second->isMember(client))
+				it->second->broadcast(":" + client->getPrefix() + " PRIVMSG "
+					+ target + " :" + text, client);
+			else
+				sendReply(client, ERR_CANNOTSENDTOCHAN, target
+					+ " :Cannot send to channel");
+		}
+		else
+			sendReply(client, ERR_NOSUCHCHANNEL, target + " :No such channel");
+	}
+	else
+	{
+		targetClient = getClientByNick(target);
+		if (targetClient)
+		{
+			std::string reply = ":" + client->getPrefix() + " PRIVMSG " + target
+				+ " :" + text;
+			sendToClient(targetClient, reply);
+		}
+		else
+			sendReply(client, ERR_NOSUCHNICK, target + " :No such nick");
+	}
 }
 
-/*
-** TODO: Personne B — NOTICE
-** Comme PRIVMSG mais ne génère AUCUNE réponse d'erreur.
-*/
 void Server::_handleNotice(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Client	*targetClient;
+
+	if (msg.params.size() < 2)
+		return ;
+	const std::string &target = msg.params[0];
+	const std::string &text = msg.params[1];
+	if (!target.empty() && target[0] == '#')
+	{
+		std::map<std::string, Channel *>::iterator it = _channels.find(target);
+		if (it != _channels.end())
+		{
+			if (it->second->isMember(client))
+				it->second->broadcast(":" + client->getPrefix() + " NOTICE "
+					+ target + " :" + text, client);
+			else
+				return ;
+		}
+		else
+			return ;
+	}
+	else
+	{
+		targetClient = getClientByNick(target);
+		if (targetClient)
+		{
+			std::string reply = ":" + client->getPrefix() + " NOTICE " + target
+				+ " :" + text;
+			sendToClient(targetClient, reply);
+		}
+		else
+			return ;
+	}
 }
 
 /*
@@ -656,20 +729,14 @@ void Server::_handleMode(Client *client, const Message &msg)
 	(void)msg;
 }
 
-/*
-** PING — déjà simple, peut être fait par l'un ou l'autre.
-** Répondre PONG avec le même paramètre.
-*/
 void Server::_handlePing(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
-	// TODO: répondre ":ft_irc PONG ft_irc :<param>"
+	if (!msg.params.empty())
+		sendToClient(client, ":ft_irc PONG ft_irc :" + msg.params[0]);
 }
 
 void Server::_handlePong(Client *client, const Message &msg)
 {
-	// Rien à faire, juste ignorer
 	(void)client;
 	(void)msg;
 }

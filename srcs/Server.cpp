@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 const std::string Server::SERVER_NAME = "ft_irc";
+bool Server::running = false;
 
 // ========================================
 // Constructeur / Destructeur
@@ -335,7 +336,6 @@ void Server::_sendData(int fd)
 void Server::_disconnectClient(int fd)
 {
 	Client	*client;
-	delete	client;
 
 	if (_clients.find(fd) == _clients.end())
 		return ;
@@ -362,6 +362,7 @@ void Server::_disconnectClient(int fd)
 		}
 	}
 	std::cout << "[LOG] Client déconnecté fd=" << fd << std::endl;
+	delete	client;
 	_clients.erase(fd);
 }
 
@@ -563,32 +564,96 @@ void Server::_handleQuit(Client *client, const Message &msg)
 	_disconnectClient(client->getFd());
 }
 
-/*
-** TODO: Personne B — JOIN
-** - Vérifier params non vide (sinon ERR_NEEDMOREPARAMS)
-** - Gérer JOIN avec key si channel +k
-** - Si channel n'existe pas -> le créer, le client devient opérateur
-** - Vérifier les modes: +i (invité?), +k (bonne key?), +l (pas plein?)
-** - Ajouter le client au channel
-** - Broadcast ":<prefix> JOIN <channel>" à tous les membres
-** - Envoyer le TOPIC (332 ou 331) et NAMES (353 + 366) au client
-*/
 void Server::_handleJoin(Client *client, const Message &msg)
 {
+	Channel	*chan;
+
+	if (msg.params.empty())
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ ":Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		chan = createChannel(msg.params[0]);
+		chan->addOperator(client);
+	}
+	if (chan->isMember(client))
+		return ;
+	if (chan->isInviteOnly() && !chan->isInvited(client))
+	{
+		sendReply(client, ERR_INVITEONLYCHAN, msg.params[0]
+			+ ":Cannot join channel (+i)");
+		return ;
+	}
+	if (chan->hasKey())
+	{
+		if (msg.params.size() < 2 || msg.params[1] != chan->getKey())
+		{
+			sendReply(client, ERR_BADCHANNELKEY, msg.params[0]
+				+ ":Cannot join channel (+k)");
+			return ;
+		}
+	}
+	if (chan->hasUserLimit()
+		&& (chan->getMembers().size() >= chan->getUserLimit()))
+	{
+		sendReply(client, ERR_CHANNELISFULL, msg.params[0]
+			+ ":Cannot join channel (+l)");
+		return ;
+	}
+	chan->addMember(client);
+	chan->removeInvited(client);
+	chan->broadcast(":" + client->getPrefix() + " JOIN " + msg.params[0], NULL);
+	if (chan->getTopic().empty())
+		sendReply(client, RPL_NOTOPIC, msg.params[0] + " :No topic is set");
+	else
+		sendReply(client, RPL_TOPIC, msg.params[0] + " :" + chan->getTopic());
+	std::string list;
+	const std::vector<Client *> &members = chan->getMembers();
+	for (size_t i = 0; i < members.size(); i++)
+	{
+		if (chan->isOperator(members[i]))
+			list += "@";
+		list += members[i]->getNickname();
+		if (i + 1 < members.size())
+			list += " ";
+	}
+	sendReply(client, RPL_NAMREPLY, "= " + msg.params[0] + " :" + list);
+	sendReply(client, RPL_ENDOFNAMES, msg.params[0] + " :End of /NAMES list");
 }
 
-/*
-** TODO: Personne B — PART
-** - Vérifier params non vide
-** - Vérifier que le channel existe et que le client en est membre
-** - Broadcast ":<prefix> PART <channel> :<reason>" aux membres
-** - Retirer le client du channel
-** - Si channel vide -> le supprimer
-*/
 void Server::_handlePart(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+
+	if (msg.params.empty())
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ ":Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[0]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[0]
+			+ " :You're not on that channel");
+		return ;
+	}
+	std::string reason = msg.params.size() > 1 ? " :" + msg.params[1] : "";
+	chan->broadcast(":" + client->getPrefix() + " PART " + msg.params[0]
+		+ reason, NULL);
+	chan->removeMember(client);
+	if (chan->isEmpty())
+		removeChannel(msg.params[0]);
 }
 
 void Server::_handlePrivmsg(Client *client, const Message &msg)
@@ -637,7 +702,11 @@ void Server::_handleNotice(Client *client, const Message &msg)
 	Client	*targetClient;
 
 	if (msg.params.size() < 2)
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
 		return ;
+	}
 	const std::string &target = msg.params[0];
 	const std::string &text = msg.params[1];
 	if (!target.empty() && target[0] == '#')
@@ -668,65 +737,264 @@ void Server::_handleNotice(Client *client, const Message &msg)
 	}
 }
 
-/*
-** TODO: Personne B — KICK
-** - Vérifier params: channel + nick à kick
-** - Vérifier que le client est opérateur du channel
-** - Vérifier que la cible est membre du channel
-** - Broadcast ":<prefix> KICK <channel> <nick> :<reason>"
-** - Retirer la cible du channel
-*/
 void Server::_handleKick(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+	Client	*target;
+
+	if (msg.params.size() < 2)
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[0]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[0]
+			+ " :You're not on that channel");
+		return ;
+	}
+	if (!chan->isOperator(client))
+	{
+		sendReply(client, ERR_CHANOPRIVSNEEDED, msg.params[0]
+			+ " :You're not channel operator");
+		return ;
+	}
+	target = getClientByNick(msg.params[1]);
+	if (!target)
+	{
+		sendReply(client, ERR_NOSUCHNICK, msg.params[1] + " :No such nick");
+		return ;
+	}
+	if (!chan->isMember(target))
+	{
+		sendReply(client, ERR_USERNOTINCHANNEL, msg.params[1] + " "
+			+ chan->getName() + " :They aren't on that channel");
+		return ;
+	}
+	std::string reason = msg.params.size() > 2 ? " :" + msg.params[2] : "";
+	chan->broadcast(":" + client->getPrefix() + " KICK " + msg.params[0] + " "
+		+ msg.params[1] + reason, NULL);
+	chan->removeMember(target);
 }
 
-/*
-** TODO: Personne B — INVITE
-** - Vérifier params: nick + channel
-** - Vérifier que le client est membre (et opérateur si +i) du channel
-** - Vérifier que la cible existe et n'est pas déjà dans le channel
-** - Ajouter la cible à la liste des invités
-** - Envoyer RPL_INVITING au client
-** - Envoyer ":<prefix> INVITE <nick> <channel>" à la cible
-*/
 void Server::_handleInvite(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+	Client	*target;
+
+	if (msg.params.size() < 2)
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[1]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[1]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[1]
+			+ " :You're not on that channel");
+		return ;
+	}
+	if (chan->isInviteOnly() && !chan->isOperator(client))
+	{
+		sendReply(client, ERR_CHANOPRIVSNEEDED, msg.params[1]
+			+ " :You're not channel operator");
+		return ;
+	}
+	target = getClientByNick(msg.params[0]);
+	if (!target)
+	{
+		sendReply(client, ERR_NOSUCHNICK, msg.params[0] + " :No such nick");
+		return ;
+	}
+	if (chan->isMember(target))
+	{
+		sendReply(client, ERR_USERONCHANNEL, msg.params[0] + " "
+			+ chan->getName() + " :is already on channel");
+		return ;
+	}
+	chan->addInvited(target);
+	sendReply(client, RPL_INVITING, chan->getName() + " " + msg.params[0]);
+	sendToClient(target, ":" + client->getPrefix() + " INVITE " + msg.params[0]
+		+ " " + msg.params[1]);
 }
 
-/*
-** TODO: Personne B — TOPIC
-** - Si pas de params[1]: afficher le topic actuel (332 ou 331)
-** - Si params[1] présent: changer le topic
-**		- Si channel +t, vérifier que le client est opérateur
-** - Broadcast le changement de topic aux membres
-*/
 void Server::_handleTopic(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+
+	if (msg.params.size() < 1)
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[0]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[0]
+			+ " :You're not on that channel");
+		return ;
+	}
+	if (msg.params.size() == 1)
+	{
+		if (!chan->getTopic().empty())
+			sendReply(client, RPL_TOPIC, msg.params[0] + " :"
+				+ chan->getTopic());
+		else
+			sendReply(client, RPL_NOTOPIC, msg.params[0] + " :No topic is set");
+		return ;
+	}
+	if (chan->isTopicRestricted() && !chan->isOperator(client))
+	{
+		sendReply(client, ERR_CHANOPRIVSNEEDED, msg.params[0]
+			+ " :You're not channel operator");
+		return ;
+	}
+	chan->setTopic(msg.params[1]);
+	chan->broadcast(":" + client->getPrefix() + " TOPIC " + msg.params[0] + " :"
+		+ msg.params[1], NULL);
 }
 
-/*
-** TODO: Personne B — MODE
-** - Parser le mode string (ex: "+ik password", "-l", "+o nick")
-** - Pour chaque flag:
-**		i: setInviteOnly
-**		t: setTopicRestricted
-**		k: setKey / removeKey
-**		o: addOperator / removeOperator
-**		l: setUserLimit / removeUserLimit
-** - Vérifier que le client est opérateur du channel
-** - Broadcast les changements de mode aux membres
-** - Si pas de mode string: afficher les modes actuels (RPL_CHANNELMODEIS)
-*/
+void Server::_applyModes(Channel *chan, Client *client, const Message &msg)
+{
+	bool	adding;
+	size_t	argIndex;
+	char	c;
+	Client	*target;
+
+	std::string modeStr = msg.params[1];
+	adding = true;
+	argIndex = 2;
+	for (size_t i = 0; i < modeStr.size(); i++)
+	{
+		c = modeStr[i];
+		if (c == '+')
+			adding = true;
+		else if (c == '-')
+			adding = false;
+		else if (c == 'i')
+			chan->setInviteOnly(adding);
+		else if (c == 't')
+			chan->setTopicRestricted(adding);
+		else if (c == 'k')
+		{
+			if (adding)
+			{
+				if (argIndex < msg.params.size())
+					chan->setKey(msg.params[argIndex++]);
+			}
+			else
+				chan->removeKey();
+		}
+		else if (c == 'o')
+		{
+			if (argIndex < msg.params.size())
+			{
+				target = getClientByNick(msg.params[argIndex++]);
+				if (target && chan->isMember(target))
+				{
+					if (adding)
+						chan->addOperator(target);
+					else
+						chan->removeOperator(target);
+				}
+			}
+		}
+		else if (c == 'l')
+		{
+			if (adding)
+			{
+				if (argIndex < msg.params.size())
+					chan->setUserLimit(std::atoi(msg.params[argIndex++].c_str()));
+			}
+			else
+				chan->removeUserLimit();
+		}
+	}
+	std::string fullMode = msg.params[1];
+	for (size_t j = 2; j < msg.params.size(); j++)
+		fullMode += " " + msg.params[j];
+	chan->broadcast(":" + client->getPrefix() + " MODE " + msg.params[0] + " "
+		+ fullMode, NULL);
+}
+
+void Server::_showChannelModes(Channel *chan, Client *client,
+	const std::string &chanName)
+{
+	std::string modes = "+";
+	std::string params = "";
+	if (chan->isInviteOnly())
+		modes += "i";
+	if (chan->isTopicRestricted())
+		modes += "t";
+	if (chan->hasKey())
+	{
+		modes += "k";
+		params += " " + chan->getKey();
+	}
+	if (chan->hasUserLimit())
+	{
+		modes += "l";
+		std::ostringstream oss;
+		oss << chan->getUserLimit();
+		params += " " + oss.str();
+	}
+	sendReply(client, RPL_CHANNELMODEIS, chanName + " " + modes + params);
+}
+
 void Server::_handleMode(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+
+	if (msg.params.empty())
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[0]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[0]
+			+ " :You're not on that channel");
+		return ;
+	}
+	if (msg.params.size() == 1)
+		return (_showChannelModes(chan, client, msg.params[0]));
+	if (!chan->isOperator(client))
+	{
+		sendReply(client, ERR_CHANOPRIVSNEEDED, msg.params[0]
+			+ " :You're not channel operator");
+		return ;
+	}
+	_applyModes(chan, client, msg);
 }
 
 void Server::_handlePing(Client *client, const Message &msg)
@@ -741,13 +1009,37 @@ void Server::_handlePong(Client *client, const Message &msg)
 	(void)msg;
 }
 
-/*
-** TODO: Personne B — WHO (optionnel mais WeeChat l'envoie)
-** - Si la cible est un channel: lister les membres
-** - Envoyer RPL_WHOREPLY (352) pour chaque membre + RPL_ENDOFWHO (315)
-*/
 void Server::_handleWho(Client *client, const Message &msg)
 {
-	(void)client;
-	(void)msg;
+	Channel	*chan;
+
+	if (msg.params.empty())
+	{
+		sendReply(client, ERR_NEEDMOREPARAMS, msg.command
+			+ " :Not enough parameters");
+		return ;
+	}
+	chan = getChannel(msg.params[0]);
+	if (!chan)
+	{
+		sendReply(client, ERR_NOSUCHCHANNEL, msg.params[0]
+			+ " :No such channel");
+		return ;
+	}
+	if (!chan->isMember(client))
+	{
+		sendReply(client, ERR_NOTONCHANNEL, msg.params[0]
+			+ " :You're not on that channel");
+		return ;
+	}
+	const std::vector<Client *> &members = chan->getMembers();
+	for (size_t i = 0; i < members.size(); i++)
+	{
+		std::string flag = chan->isOperator(members[i]) ? "H@" : "H";
+		sendReply(client, RPL_WHOREPLY, msg.params[0] + " "
+			+ members[i]->getUsername() + " " + members[i]->getHostname()
+			+ " ft_irc " + members[i]->getNickname() + " " + flag + " :0 "
+			+ members[i]->getRealname());
+	}
+	sendReply(client, RPL_ENDOFWHO, msg.params[0] + " :End of /WHO list");
 }

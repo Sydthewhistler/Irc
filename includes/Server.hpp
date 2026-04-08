@@ -95,6 +95,8 @@ private:
 	std::map<std::string, Channel *>	_channels;	// name -> Channel*
 
 	void	_sendWelcome(Client *client);
+	void	_applyModes(Channel *chan, Client *client, const Message &msg);
+	void	_showChannelModes(Channel *chan, Client *client, const std::string &chanName);
 };
 
 bool	nick_is_valid(const std::string &nickname);

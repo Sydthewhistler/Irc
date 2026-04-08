@@ -20,7 +20,8 @@
 # define RPL_INVITING			"341"	// "<channel> <nick>"
 # define RPL_NAMREPLY			"353"	// "= <channel> :<nicks>"
 # define RPL_ENDOFNAMES			"366"	// "<channel> :End of /NAMES list"
-
+# define RPL_WHOREPLY			"352"	// <channel> <username> <hostname> ft_irc <nickname> H[@] :0 <realname>
+# define RPL_ENDOFWHO			"315"	// <channel> :End of /WHO list
 // --- Erreurs ---
 # define ERR_NOSUCHNICK			"401"	// "<nick> :No such nick/channel"
 # define ERR_NOSUCHCHANNEL		"403"	// "<channel> :No such channel"

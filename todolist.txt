@@ -1,1 +1,11 @@
 client -> PRIVMSG <destinataire> :<message>\r\n -> server -> (personne A) parse -> ajoute -> :[user] [user]@[IP] .... -> struct message -> personne B interprete
+
+Ton serveur fonctionne, l'authentification marche. Tu reçois bien les 4 messages de bienvenue.
+Par contre, remarque un détail dans le message 001 : test!test@ — le hostname est vide. C'est parce que dans _acceptClient, tu récupères le hostname avec inet_ntop mais tu ne le sets jamais sur le client. Il te manque un :
+newClient->setHostname(hostname);
+juste après newClient = new Client(clientFd); dans _acceptClient.
+Sinon, continue à tester. Dans le même terminal nc, essaie :
+JOIN #test
+PRIVMSG #test :Hello world
+TOPIC #test :Mon premier topic
+Et pour tester avec deux clients, ouvre un troisième terminal avec un autre nc -C 127.0.0.1 6667, authentifie-toi avec un nick différent (par ex NICK test2), et join le même channel. Tu pourras voir si les messages sont bien broadcastés entre les deux.

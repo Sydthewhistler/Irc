@@ -251,6 +251,7 @@ void Server::_acceptClient(void)
 	fcntl(clientFd, F_SETFL, O_NONBLOCK);
 	inet_ntop(AF_INET, &clientAddr.sin_addr, hostname, sizeof(hostname));
 	newClient = new Client(clientFd);
+	newClient->setHostname(hostname);
 	_clients[clientFd] = newClient;
 	pfd.fd = clientFd;
 	pfd.events = POLLIN | POLLOUT;

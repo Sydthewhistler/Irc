@@ -65,6 +65,8 @@ Message Message::parse(const std::string &raw)
 			std::string rest;
 			if (std::getline(iss, rest))
 				trailing += rest;
+			while (!trailing.empty() && trailing[0] == ':')
+				trailing = trailing.substr(1);
 			msg.params.push_back(trailing);
 			break;
 		}

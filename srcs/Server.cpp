@@ -780,7 +780,7 @@ void Server::_handleKick(Client *client, const Message &msg)
 			+ chan->getName() + " :They aren't on that channel");
 		return ;
 	}
-	std::string reason = msg.params.size() > 2 ? " :" + msg.params[2] : "";
+	std::string reason = (msg.params.size() > 2 && !msg.params[2].empty()) ? " :" + msg.params[2] : "";
 	chan->broadcast(":" + client->getPrefix() + " KICK " + msg.params[0] + " "
 		+ msg.params[1] + reason, NULL);
 	chan->removeMember(target);

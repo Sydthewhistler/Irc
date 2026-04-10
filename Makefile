@@ -1,4 +1,7 @@
 NAME		= ircserv
+BOT			= bot
+BOT_SRCS	= $(SRCS_DIR)/Bot.cpp
+BOT_OBJS	= $(BOT_SRCS:$(SRCS_DIR)/%.cpp=$(OBJS_DIR)/%.o)
 
 CXX			= c++
 CXXFLAGS	= -Wall -Wextra -Werror -std=c++98
@@ -9,17 +12,21 @@ SRCS_DIR	= srcs
 OBJS_DIR	= objs
 
 SRCS		= $(SRCS_DIR)/main.cpp \
-			  $(SRCS_DIR)/Server.cpp \
+			  $(SRCS_DIR)/ServerCommands.cpp\
+			  $(SRCS_DIR)/ServerNetwork.cpp\
 			  $(SRCS_DIR)/Client.cpp \
 			  $(SRCS_DIR)/Channel.cpp \
 			  $(SRCS_DIR)/Message.cpp
 
 OBJS		= $(SRCS:$(SRCS_DIR)/%.cpp=$(OBJS_DIR)/%.o)
 
-all: $(NAME)
+all: $(NAME) $(BOT)
 
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
+
+$(BOT): $(BOT_OBJS)
+	$(CXX) $(CXXFLAGS) $(BOT_OBJS) -o $(BOT)
 
 $(OBJS_DIR)/%.o: $(SRCS_DIR)/%.cpp | $(OBJS_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
@@ -31,7 +38,7 @@ clean:
 	rm -rf $(OBJS_DIR)
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f $(NAME) $(BOT)
 
 re: fclean all
 

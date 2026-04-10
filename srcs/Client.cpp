@@ -1,7 +1,5 @@
 #include "Client.hpp"
 
-// Forme canonique (partagé)
-
 Client::Client(int fd)
 	: _fd(fd), _nickname("*"), _username(""), _realname(""),
 	  _hostname(""), _recvBuffer(""), _sendBuffer(""),
@@ -35,8 +33,6 @@ Client &Client::operator=(const Client &rhs)
 
 Client::~Client(void) {}
 
-// Getters simples (partagé)
-
 int					Client::getFd(void) const { return _fd; }
 const std::string	&Client::getNickname(void) const { return _nickname; }
 const std::string	&Client::getUsername(void) const { return _username; }
@@ -45,8 +41,6 @@ const std::string	&Client::getHostname(void) const { return _hostname; }
 const std::string	&Client::getRecvBuffer(void) const { return _recvBuffer; }
 const std::string	&Client::getSendBuffer(void) const { return _sendBuffer; }
 bool				Client::hasPassValidated(void) const { return _passValidated; }
-
-// Setters simples (partagé)
 
 void	Client::setNickname(const std::string &nickname) { _nickname = nickname; }
 void	Client::setUsername(const std::string &username) { _username = username; }
@@ -67,21 +61,11 @@ bool	Client::isRegistered(void) const
 	return false;
 }
 
-// --- Buffer management ---
-
 void	Client::appendRecvBuffer(const std::string &data) { _recvBuffer += data; }
 void	Client::clearRecvBuffer(void) { _recvBuffer.clear(); }
 void	Client::appendSendBuffer(const std::string &data) { _sendBuffer += data; }
 void	Client::clearSendBuffer(void) { _sendBuffer.clear(); }
 
-/*
-** TODO: Personne A
-** extractLine(): cherche \r\n (ou \n seul pour compatibilité WeeChat)
-** dans _recvBuffer.
-** Si trouvé: extraire la ligne (sans le \r\n), la mettre dans 'line',
-** retirer la ligne + le délimiteur du buffer, retourner true.
-** Si pas trouvé: retourner false (données partielles, on attend la suite).
-*/
 bool	Client::extractLine(std::string &line)
 {
 	size_t pos = _recvBuffer.find("\r\n");
@@ -91,7 +75,7 @@ bool	Client::extractLine(std::string &line)
 		_recvBuffer.erase(0, pos + 2);
 		return true;
 	}
-	pos = _recvBuffer.find('\n'); // compatibilité avec clients qui n'envoient que \n (WeeChat)
+	pos = _recvBuffer.find('\n');
 	if (pos != std::string::npos)
 	{
 		line = _recvBuffer.substr(0, pos);

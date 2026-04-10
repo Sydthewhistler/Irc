@@ -54,9 +54,6 @@ private:
 	Server(const Server &src);
 	Server &operator=(const Server &rhs);
 
-	// BOT
-	void _initBot();
-
 	// --- Signaux ---
 	static void _initSignals();
 	static void	_handleSigint(int sig);

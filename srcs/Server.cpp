@@ -24,6 +24,7 @@ Server::Server(int port, const std::string &password) : _port(port),
 {
 	_initSocket();
 	_initSignals();
+	_initBot();
 }
 
 /*
@@ -175,6 +176,21 @@ void Server::_initSignals()
 {
 	std::signal(SIGINT, Server::_handleSigint);
 	std::signal(SIGPIPE, SIG_IGN);
+}
+
+void Server::_initBot()
+{
+	int botFd = -2;
+	Client *bot = new Client(botFd);
+
+	bot->setNickname("IRC_Bot");
+	bot->setUsername("bot");
+	bot->setHostname("localhost");
+	bot->setRealname("Service Bot");
+	bot->setPassValidated(true);
+
+	_clients[botFd] = bot;
+	std::cout << "[LOG] Bot initialisé (Nick: IRC_Bot)" << std::endl;
 }
 
 /*

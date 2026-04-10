@@ -10,15 +10,72 @@ PRIVMSG #test :Hello world
 TOPIC #test :Mon premier topic
 Et pour tester avec deux clients, ouvre un troisième terminal avec un autre nc -C 127.0.0.1 6667, authentifie-toi avec un nick différent (par ex NICK test2), et join le même channel. Tu pourras voir si les messages sont bien broadcastés entre les deux.
 
-Bonne décision ! Voici la différence fondamentale :
+C'est une excellente question et c'est là que réside l'astuce : on ne fait jamais de send() vers le bot.
 
-Bot interne (ce que ton mate a fait) Le bot est un faux Client avec fd = -2 qui vit dans Server.cpp. Le serveur doit gérer des cas spéciaux partout — que faire quand il essaie de send() sur fd = -2 ? Comment le bot "répond" sans vrai socket ?
+Le bot n'a pas de socket réelle, donc il ne peut pas "recevoir" de données via le système d'exploitation. Dans l'architecture IRC, le bot est un objet "passif" qui vit à l'intérieur de ton code serveur.
 
-Bot externe (ce qu'on va faire) Le bot est un programme séparé Bot.cpp qui se connecte à ton serveur exactement comme irssi. Il a un vrai fd, un vrai socket. Ton serveur ne sait même pas que c'est un bot — il le voit comme un client normal.
+Voici comment gérer les flux de données sans casser ton programme :
+1. Le flux sortant (Utilisateur → Bot)
 
-La différence concrète :
+Quand un utilisateur envoie un message au bot, tu n'utilises pas la fonction _sendData(botFd). À la place, tu interceptes le message dans _handlePrivmsg et tu appelles directement une fonction de logique interne.
 
-Bot interne :  ton serveur doit changer
-Bot externe :  ton serveur ne change pas du tout
+    Ce qui se passe : L'utilisateur appelle PRIVMSG IRC_Bot :Salut.
 
-Maintenant avant de coder, dis-moi — quand irssi se connecte à ton serveur, qu'est-ce qu'il envoie en premier ? Tu l'as fait tout à l'heure avec les tests DCC, tu t'en souviens ?
+    Ton code : if (target == "IRC_Bot") { _executeBotLogic(...); }
+
+    Résultat : Le serveur traite la demande immédiatement sans passer par le réseau.
+
+2. Le flux entrant (Bot → Utilisateur)
+
+Pour que le bot "réponde", il doit envoyer un message à l'utilisateur. Là, tu utilises ton système existant car l'utilisateur, lui, possède un FD valide.
+C++
+
+void Server::_executeBotLogic(Client *sender, const std::string &text)
+{
+    std::string response = "Bonjour, je suis le bot !";
+    
+    // On utilise sendToClient qui remplit le buffer du client REEL (ex: fd 5)
+    // Le serveur enverra ensuite ce buffer via poll() normalement.
+    sendToClient(sender, ":IRC_Bot PRIVMSG " + sender->getNickname() + " :" + response);
+}
+
+3. Protection dans _sendData
+
+Tu dois impérativement protéger tes fonctions réseau pour qu'elles ignorent le bot. Si jamais ton code essaie de faire un send() sur le FD -2, cela retournera une erreur.
+
+Modifie ta fonction _sendData comme ceci :
+C++
+
+void Server::_sendData(int fd)
+{
+    // Sécurité : Si le FD est celui du bot, on ne fait rien
+    if (fd < 0)
+        return;
+
+    Client *client;
+    // ... reste de ton code ...
+}
+
+4. Pourquoi utiliser un FD -2 ?
+
+On lui donne un FD fictif uniquement pour pouvoir le stocker dans ta std::map<int, Client *> _clients. Cela permet de :
+
+    Vérifier si le nom "IRC_Bot" est déjà pris (via getClientByNick).
+
+    Le supprimer facilement lors de la fermeture du serveur avec delete.
+
+    Éviter que poll() ne s'en occupe (car tu n'ajoutes que les FDs >= 0 dans ton vecteur _pollFds).
+
+Résumé visuel du flux
+
+    Client (FD 5) envoie PRIVMSG IRC_Bot → recv() sur FD 5.
+
+    Serveur voit que la cible est le Bot → appelle _executeBotLogic.
+
+    Bot prépare une réponse → appelle sendToClient(client_fd_5, "...").
+
+    Serveur lors du prochain tour de poll(), voit POLLOUT sur le FD 5 → appelle _sendData(5).
+
+    Client (FD 5) reçoit la réponse.
+
+Le FD -2 n'est donc qu'une étiquette pour dire "Cet objet Client est spécial, ne touche pas au réseau avec lui".

@@ -1,3 +1,7 @@
+*This project has been created as part of the 42 curriculum by <login1>, <login2>.*
+
+---
+
 # ft_irc
 
 > A minimal IRC server written in C++98, compatible with the **irssi** client.
@@ -6,20 +10,22 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
+- [Description](#description)
 - [Features](#features)
 - [Architecture](#architecture)
-- [Build](#build)
-- [Usage](#usage)
+- [Instructions](#instructions)
 - [Connecting with irssi](#connecting-with-irssi)
 - [Supported Commands](#supported-commands)
 - [Code Structure](#code-structure)
+- [Resources](#resources)
 
 ---
 
-## Overview
+## Description
 
 `ft_irc` is an IRC server implemented in C++98 as part of the 42 curriculum. It follows the IRC protocol (RFC 1459) and allows multiple clients to connect simultaneously, join channels, exchange messages, and manage channel modes.
+
+The goal of this project is to understand low-level network programming: socket management, non-blocking I/O, and the IRC protocol itself.
 
 The server uses a **non-blocking** model based on `poll()`: a single thread handles all connections.
 
@@ -84,7 +90,9 @@ The `Message` class handles parsing and reconstruction of these messages.
 
 ---
 
-## Build
+## Instructions
+
+### Compilation
 
 ```bash
 make
@@ -98,9 +106,7 @@ make fclean   # remove object files + executable
 make re       # full rebuild
 ```
 
----
-
-## Usage
+### Execution
 
 ```bash
 ./ircserv <port> <password>
@@ -205,3 +211,29 @@ Handles parsing and serialization of IRC protocol messages. Extracts the prefix,
 
 Centralizes the IRC numeric reply codes used in server responses (`001`, `353`, `433`, etc.).
 
+---
+
+## Resources
+
+### References
+
+- [RFC 1459 — Internet Relay Chat Protocol](https://datatracker.ietf.org/doc/html/rfc1459) — The original IRC protocol specification.
+- [RFC 2812 — IRC: Client Protocol](https://datatracker.ietf.org/doc/html/rfc2812) — Updated client protocol specification.
+- [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/) — Comprehensive guide to socket programming in C.
+- [irssi documentation](https://irssi.org/documentation/) — Official irssi client documentation.
+- [Modern IRC — IRC reference](https://modern.ircdocs.horse/) — Readable and up-to-date IRC reference used to clarify ambiguities in the RFCs.
+- [poll(2) — Linux man page](https://man7.org/linux/man-pages/man2/poll.2.html) — Reference for the `poll()` system call.
+
+### Use of AI
+
+AI (Claude by Anthropic) was used during this project for the following tasks:
+
+- **Debugging** — Identifying subtle bugs in the `poll()` event loop and buffer management logic.
+- **Code review** — Reviewing command handler implementations for edge cases and RFC compliance.
+- **Documentation** — Generating and structuring this README.
+
+AI was not used to write core logic from scratch. All architectural decisions, protocol choices, and implementations were made and validated by the authors.
+
+---
+
+> Project built as part of the **42** curriculum — C++98, no Boost, no threads.
